@@ -1,0 +1,78 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (iPad; CPU OS 18_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/379.0.786762118 Mobile/15E148 Safari/604.1" version="29.1.1">
+  <diagram name="หน้า-1" id="JPdb5gEONWQ1jSJg6Z09">
+    <mxGraphModel dx="2560" dy="1551" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-6" edge="1" parent="1" source="rZDQW6HOXQ0atS2GfO5g-3" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rZDQW6HOXQ0atS2GfO5g-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=255;strokeWidth=2;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=30;fontStyle=0;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;" value="เริ่มต้น" vertex="1">
+          <mxGeometry height="70" width="484" x="156" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-7" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-1" parent="1" style="shape=parallelogram;html=1;strokeWidth=2;perimeter=parallelogramPerimeter;whiteSpace=wrap;rounded=1;arcSize=12;size=0.23;labelBorderColor=none;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="จำนวนเงินเดือน" vertex="1">
+          <mxGeometry height="120" width="484" x="156" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-9" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-2" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=14;strokeWidth=2;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="คำนวนภาษี = เงินเดือน x 0.10" vertex="1">
+          <mxGeometry height="100" width="440" x="178" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-10" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-4" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-4" parent="1" style="shape=parallelogram;html=1;strokeWidth=2;perimeter=parallelogramPerimeter;whiteSpace=wrap;rounded=1;arcSize=12;size=0.23;labelBorderColor=none;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="แสดงผลเงินเดือน&lt;div&gt;และภาษี&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="484" x="156" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=255;strokeWidth=2;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=30;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="จบ" vertex="1">
+          <mxGeometry height="70" width="484" x="156" y="960" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=284;strokeWidth=2;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=30;fontStyle=0;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;" value="เริ่มต้น" vertex="1">
+          <mxGeometry height="70" width="484" x="153" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-15" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-12" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-12" parent="1" style="shape=parallelogram;html=1;strokeWidth=2;perimeter=parallelogramPerimeter;whiteSpace=wrap;rounded=1;arcSize=12;size=0.23;labelBorderColor=none;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="แสดงข้อความ&lt;div&gt;“โปรแกรมแปลงองศาเซลเซียสเป็นฟาเรนไฮต์”&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="710" x="40" y="1320" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-13" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-11" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-12">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="400" y="1430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-17" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-14" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-14" parent="1" style="shape=parallelogram;html=1;strokeWidth=2;perimeter=parallelogramPerimeter;whiteSpace=wrap;rounded=1;arcSize=12;size=0.23;labelBorderColor=none;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="แสดงข้อความ&lt;div&gt;“กรุณาป้อนค่าองศาเซลเซียส (&lt;span style=&quot;text-align: start; -webkit-text-size-adjust: auto;&quot;&gt;&lt;font style=&quot;font-size: 37px;&quot;&gt;°&lt;/font&gt;&lt;/span&gt;C)”&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="635" x="80.5" y="1500" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-19" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-16" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-16" parent="1" style="shape=parallelogram;html=1;strokeWidth=2;perimeter=parallelogramPerimeter;whiteSpace=wrap;rounded=1;arcSize=12;size=0.23;labelBorderColor=none;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="รับค่า C" vertex="1">
+          <mxGeometry height="120" width="580" x="108" y="1680" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-21" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-18" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=14;strokeWidth=2;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="คำนวน&lt;div&gt;F = ( C x 9 / 5 ) + 32&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="440" x="178" y="1870" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-23" edge="1" parent="1" source="gwoLu3hRNcapS0S_Knsr-20" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;strokeWidth=4;" target="gwoLu3hRNcapS0S_Knsr-22">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-20" parent="1" style="shape=parallelogram;html=1;strokeWidth=2;perimeter=parallelogramPerimeter;whiteSpace=wrap;rounded=1;arcSize=12;size=0.23;labelBorderColor=none;fontSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0;direction=west;" value="แสดงผล&lt;div&gt;“อุณหภูมิในหน่วยฟาเรนไฮต์คือ : “ F&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="635" x="77.5" y="2040" as="geometry" />
+        </mxCell>
+        <mxCell id="gwoLu3hRNcapS0S_Knsr-22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;absoluteArcSize=1;arcSize=277;strokeWidth=2;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=30;fontFamily=Kanit;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DKanit;fontStyle=0" value="จบ" vertex="1">
+          <mxGeometry height="70" width="484" x="153" y="2220" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
