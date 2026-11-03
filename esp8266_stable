@@ -1,0 +1,769 @@
+// ============================================================
+//  ESP8266 (NodeMCU) — Xerox AltaLink C8055 SNMP Bridge
+//  + reads printer IP OID, posts as printerIP
+// ============================================================
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <WiFiUdp.h>
+#include <Arduino_SNMP_Manager.h>
+#include <EEPROM.h>
+#include <time.h>
+
+// ============================================================
+//  Preferences shim for ESP8266 (EEPROM-backed, 96-byte slots)
+// ============================================================
+class Preferences {
+public:
+  bool begin(const char*, bool = false) { EEPROM.begin(2048); return true; }
+  void end() { EEPROM.commit(); }
+
+  String getString(const char* key, const String& def = "") {
+    int addr = findKey(key);
+    if (addr < 0) return def;
+    int len = EEPROM.read(addr);
+    if (len <= 0 || len > 90) return def;
+    String s;
+    for (int i = 0; i < len; i++) s += (char)EEPROM.read(addr + 1 + i);
+    return s;
+  }
+  void putString(const char* key, const String& value) { writeEntry(key, value); }
+
+  bool getBool(const char* key, bool def = false) {
+    String v = getString(key, def ? "1" : "0");
+    return v == "1";
+  }
+  void putBool(const char* key, bool value) { putString(key, value ? "1" : "0"); }
+  void remove(const char* key) { writeEntry(key, ""); }
+
+private:
+  static const int SLOT_SIZE  = 96;
+  static const int SLOT_COUNT = 16;
+  static const int SLOT_BASE  = 0;
+
+  int slotAddr(int i) { return SLOT_BASE + i * SLOT_SIZE; }
+
+  int findKey(const char* key) {
+    for (int i = 0; i < SLOT_COUNT; i++) {
+      int a = slotAddr(i);
+      int klen = EEPROM.read(a);
+      if (klen <= 0 || klen > 15) continue;
+      String k;
+      for (int j = 0; j < klen; j++) k += (char)EEPROM.read(a + 1 + j);
+      if (k == key) return a + 1 + klen;
+    }
+    return -1;
+  }
+
+  int findFreeSlot() {
+    for (int i = 0; i < SLOT_COUNT; i++) {
+      int a = slotAddr(i);
+      int klen = EEPROM.read(a);
+      if (klen == 0 || klen > 15) return a;
+    }
+    return -1;
+  }
+
+  void writeEntry(const char* key, const String& value) {
+    int klen = strlen(key);
+    if (klen > 15) return;
+    int vlen = value.length();
+    if (vlen > SLOT_SIZE - 2 - klen) vlen = SLOT_SIZE - 2 - klen;
+
+    int slotBase = -1;
+    for (int i = 0; i < SLOT_COUNT; i++) {
+      int a = slotAddr(i);
+      int kl = EEPROM.read(a);
+      if (kl == klen) {
+        bool match = true;
+        for (int j = 0; j < klen; j++)
+          if ((char)EEPROM.read(a + 1 + j) != key[j]) { match = false; break; }
+        if (match) { slotBase = a; break; }
+      }
+    }
+    if (slotBase < 0) slotBase = findFreeSlot();
+    if (slotBase < 0) return;
+
+    EEPROM.write(slotBase, (uint8_t)klen);
+    for (int j = 0; j < klen; j++) EEPROM.write(slotBase + 1 + j, key[j]);
+    EEPROM.write(slotBase + 1 + klen, (uint8_t)vlen);
+    for (int j = 0; j < vlen; j++)
+      EEPROM.write(slotBase + 2 + klen + j, value[j]);
+  }
+};
+
+Preferences prefs;
+
+// ================== PIN MAP (NodeMCU) ==================
+#define CONFIG_BUTTON 0
+#define LED           2
+#define LED_ON        LOW
+#define LED_OFF       HIGH
+
+ESP8266WebServer server(80);
+WiFiUDP udp;
+SNMPManager snmp("public");
+
+bool configMode = false;
+unsigned long lastWiFiCheck     = 0;
+unsigned long lastScheduleCheck = 0;
+unsigned long lastCommandCheck  = 0;
+unsigned long lastPingCheck     = 0;
+unsigned long buttonPressStart  = 0;
+bool buttonHeld = false;
+
+// ================== CONFIG ==================
+struct Config {
+  char esp32Name[32];
+  char ssid[32];
+  char password[64];
+  char printerIP[16];
+  bool firstSetup;
+  char hostname[90];
+} config;
+
+// ================== SNMP DATA ==================
+char deviceDescr[80];
+char systemName[64];
+char serialNum[64];
+char sysDescr[300];
+char softwareVersion[280];
+char printerIPSensed[24];    // <-- from OID .253.8.64.4.2.1.7.7.22430000
+
+int powerOnImpr;
+int blackCopy,  colorCopy;
+int blackPrint, colorPrint;
+int networkScan, emailScan;
+int blackTotal, colorTotal;
+int blackLargeTotal, colorLargeTotal;
+int totalAll;
+
+// ================== OID TABLE (verified C8055, 15 items) ==================
+struct OIDItem {
+  const char* oid;
+  void*       valuePtr;
+  bool        isString;
+};
+
+OIDItem oidList[] = {
+  {".1.3.6.1.2.1.25.3.2.1.3.1",               deviceDescr,      true  },
+  {".1.3.6.1.2.1.1.5.0",                      systemName,       true  },
+  {".1.3.6.1.2.1.43.5.1.1.17.1",              serialNum,        true  },
+
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.2",   &powerOnImpr,     false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.11.20.3",  &blackCopy,       false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.11.20.25", &colorCopy,       false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.7",   &blackPrint,      false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.29",  &colorPrint,      false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.10.20.11", &networkScan,     false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.10.20.12", &emailScan,       false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.34",  &blackTotal,      false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.33",  &colorTotal,      false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.44",  &blackLargeTotal, false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.43",  &colorLargeTotal, false },
+  {".1.3.6.1.4.1.253.8.53.13.2.1.6.1.20.1",   &totalAll,        false },
+};
+const int OID_COUNT = sizeof(oidList) / sizeof(oidList[0]);
+ValueCallback* callbacks[OID_COUNT];
+
+// Xerox printer IP — queried separately (long variable-length index)
+const char* PRINTER_IP_OID = ".1.3.6.1.4.1.253.8.64.4.2.1.7.7.22430000";
+
+int scheduleHours[]   = {9, 15};
+int scheduleMinutes[] = {0, 0};
+
+String domain, addEspUrl, getEspIdUrl, addMeterUrl;
+String getCommandUrl, setCommandUrl, pingUrl;
+
+void setupDomain() {
+  domain        = String(config.hostname);
+  addEspUrl     = domain + "/addEsp.php";
+  getEspIdUrl   = domain + "/getPrinterIdByEspSerial.php";
+  addMeterUrl   = domain + "/addMeter.php";
+  getCommandUrl = domain + "/getCommand.php";
+  setCommandUrl = domain + "/setCommand.php";
+  pingUrl       = domain + "/ping.php";
+}
+
+// ================== PROTOTYPES ==================
+void startConfigMode();
+void setupWiFiNormal();
+void checkWiFiReconnect();
+void loadConfig();
+void setupSNMP();
+void runSNMP();
+void runVersionQuery();
+void runPrinterIPQuery();
+void saveMeter();
+void retryPendingCommand();
+void printResults();
+void printVersion();
+bool isScheduleTime();
+void checkCloudCommand();
+void clearCloudCommand();
+String pingServer();
+bool waitForSNMPResponse(unsigned long timeoutMs);
+bool isSNMPDataValid();
+String getChipID();
+String getWithRetry(String url, int maxRetries = 3, int timeoutMs = 20000);
+String postWithRetry(String url, String payload, int maxRetries = 3, int timeoutMs = 20000);
+String urlEncode(const String& s);
+void extractVersionRaw();
+
+// ============================================================
+//  SETUP
+// ============================================================
+void setup() {
+  Serial.begin(9600);
+  delay(200);
+  pinMode(CONFIG_BUTTON, INPUT_PULLUP);
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LED_OFF);
+
+  Serial.println("\n\n=== ESP8266 Xerox AltaLink C8055 Bridge ===");
+  Serial.printf("Chip ID: %s\n", getChipID().c_str());
+
+  loadConfig();
+  Serial.printf("Stored hostname: [%s]\n", config.hostname);
+  Serial.printf("Stored printer : [%s]\n", config.printerIP);
+
+  if (strlen(config.ssid) == 0) { startConfigMode(); return; }
+
+  setupWiFiNormal();
+  setupSNMP();
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("System ready — waiting for schedule...");
+}
+
+// ============================================================
+//  LOOP
+// ============================================================
+void loop() {
+  server.handleClient();
+  snmp.loop();
+
+  if (digitalRead(CONFIG_BUTTON) == LOW) {
+    if (!buttonHeld) { buttonHeld = true; buttonPressStart = millis(); }
+    if (millis() - buttonPressStart >= 2000) {
+      buttonHeld = false;
+      startConfigMode();
+      return;
+    }
+  } else {
+    buttonHeld = false;
+  }
+
+  checkWiFiReconnect();
+  if (configMode) return;
+
+  unsigned long now = millis();
+  if (now - lastScheduleCheck >= 60000) {
+    lastScheduleCheck = now;
+    if (isScheduleTime()) { runSNMP(); saveMeter(); }
+  }
+  if (now - lastCommandCheck >= 60000) { lastCommandCheck = now; checkCloudCommand(); }
+  if (now - lastPingCheck    >= 60000) { lastPingCheck    = now; pingServer(); }
+  retryPendingCommand();
+}
+
+// ============================================================
+//  HTTP helpers
+// ============================================================
+String getWithRetry(String url, int maxRetries, int timeoutMs) {
+  for (int a = 0; a < maxRetries; a++) {
+    int code = -1;
+    String r;
+
+    if (url.startsWith("https://")) {
+      WiFiClientSecure client;
+      client.setInsecure();
+      HTTPClient http;
+      http.begin(client, url);
+      http.setTimeout(timeoutMs);
+      http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+      code = http.GET();
+      if (code > 0) r = http.getString();
+      http.end();
+    } else {
+      WiFiClient client;
+      HTTPClient http;
+      http.begin(client, url);
+      http.setTimeout(timeoutMs);
+      http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+      code = http.GET();
+      if (code > 0) r = http.getString();
+      http.end();
+    }
+
+    if (code > 0) {
+      Serial.printf("📡 GET %d: %s\n", code, r.c_str());
+      return r;
+    }
+    Serial.printf("⚠️ GET fail %d/%d code %d url=%s\n",
+                  a + 1, maxRetries, code, url.c_str());
+    delay(5000);
+  }
+  Serial.printf("❌ GET failed: %s\n", url.c_str());
+  return "";
+}
+
+String postWithRetry(String url, String payload, int maxRetries, int timeoutMs) {
+  for (int a = 0; a < maxRetries; a++) {
+    int code = -1;
+    String r;
+
+    if (url.startsWith("https://")) {
+      WiFiClientSecure client;
+      client.setInsecure();
+      HTTPClient http;
+      http.begin(client, url);
+      http.setTimeout(timeoutMs);
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+      code = http.POST(payload);
+      if (code > 0) r = http.getString();
+      http.end();
+    } else {
+      WiFiClient client;
+      HTTPClient http;
+      http.begin(client, url);
+      http.setTimeout(timeoutMs);
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+      code = http.POST(payload);
+      if (code > 0) r = http.getString();
+      http.end();
+    }
+
+    if (code > 0) {
+      Serial.printf("📤 POST %d: %s\n", code, r.c_str());
+      return r;
+    }
+    Serial.printf("⚠️ POST fail %d/%d code %d url=%s\n",
+                  a + 1, maxRetries, code, url.c_str());
+    delay(5000);
+  }
+  Serial.printf("❌ POST failed: %s\n", url.c_str());
+  return "";
+}
+
+String urlEncode(const String& s) {
+  String out; char buf[5];
+  for (size_t i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (isalnum((unsigned char)c) || c=='-' || c=='_' || c=='.' || c=='~') out += c;
+    else if (c == ' ') out += '+';
+    else { sprintf(buf, "%%%02X", (uint8_t)c); out += buf; }
+  }
+  return out;
+}
+
+// ============================================================
+//  CONFIG MODE
+// ============================================================
+void startConfigMode() {
+  configMode = true;
+  digitalWrite(LED, LED_ON);
+
+  WiFi.disconnect(true);
+  delay(300);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP32_Config", "12345678");
+  Serial.printf("📶 AP 'ESP32_Config' → http://%s\n",
+                WiFi.softAPIP().toString().c_str());
+
+  server.on("/", []() {
+    int n = WiFi.scanNetworks();
+    String page = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body>";
+    page += "<h2>ESP Serial: " + getChipID() + "</h2>";
+    page += "<h2>Current SSID: " + String(config.ssid) + "</h2>";
+    page += "<h2>Current Host: " + String(config.hostname) + "</h2>";
+    page += "<h3>Select WiFi Network</h3><ul>";
+    for (int i = 0; i < n; i++)
+      page += "<li><a href='/select?ssid=" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) +
+              " (" + String(WiFi.RSSI(i)) + " dBm)</a></li>";
+    page += "</ul></body></html>";
+    server.send(200, "text/html", page);
+  });
+
+  server.on("/select", []() {
+    String ssid = server.arg("ssid");
+    String page = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body>";
+    page += "<h2>Connect to: " + ssid + "</h2>";
+    page += "<form action='/test' method='POST'>";
+    page += "<input type='hidden' name='ssid' value='" + ssid + "'>";
+    page += "Host name (full URL): <input name='hostname' size='60' value='" +
+            String(config.hostname) + "'><br>";
+    page += "ESP Board name: <input name='esp32Name' value='" +
+            String(config.esp32Name) + "'><br>";
+    page += "WiFi password: <input name='password' type='password'><br><br>";
+    page += "Printer IP: <input name='printer' value='" +
+            String(config.printerIP) + "'><br><br>";
+    page += "<input type='submit' value='Test Connection'>";
+    page += "</form></body></html>";
+    server.send(200, "text/html", page);
+  });
+
+  server.on("/test", []() {
+    String ssid      = server.arg("ssid");
+    String hostname  = server.arg("hostname");
+    String esp32name = server.arg("esp32Name");
+    String password  = server.arg("password");
+    String printer   = server.arg("printer");
+    hostname.trim();
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(), password.c_str());
+    int t = 0;
+    while (WiFi.status() != WL_CONNECTED && t++ < 20) delay(500);
+
+    if (WiFi.status() == WL_CONNECTED) {
+      prefs.begin("esp32cfg", false);
+      prefs.putString("hostname",   hostname);
+      prefs.putString("esp32Name",  esp32name);
+      prefs.putString("ssid",       ssid);
+      prefs.putString("pass",       password);
+      prefs.putString("printer",    printer);
+      prefs.putBool  ("firstSetup", true);
+      prefs.end();
+
+      Serial.printf("💾 Saved hostname: [%s]\n", hostname.c_str());
+
+      server.send(200, "text/html",
+        "<html><body><h2>Connected Successfully!</h2>"
+        "<p>Saved: " + hostname + "</p><p>Rebooting...</p></body></html>");
+      delay(2000);
+      digitalWrite(LED, LED_OFF);
+      ESP.restart();
+    } else {
+      server.send(200, "text/html",
+        "<html><body><h2>❌ Failed to connect to WiFi</h2>"
+        "<a href='/'>Back</a></body></html>");
+      digitalWrite(LED, LED_OFF);
+      ESP.restart();
+    }
+  });
+
+  server.begin();
+  Serial.println("🌐 Config web active.");
+}
+
+// ============================================================
+//  NORMAL WIFI
+// ============================================================
+void setupWiFiNormal() {
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname("ESP8266_Printer");
+  WiFi.begin(config.ssid, config.password);
+  Serial.printf("Connecting to %s", config.ssid);
+
+  int retry = 0;
+  while (WiFi.status() != WL_CONNECTED && retry++ < 40) {
+    delay(500); Serial.print(".");
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\n⚠️ WiFi failed — will retry in loop");
+    return;
+  }
+  Serial.printf("\n✅ Connected, IP: %s\n", WiFi.localIP().toString().c_str());
+
+  if (config.firstSetup) {
+    String postData = "espSerial=" + getChipID() + "&espName=" + urlEncode(String(config.esp32Name));
+    Serial.printf("📤 Registering with %s\n", addEspUrl.c_str());
+    postWithRetry(addEspUrl, postData);
+    prefs.begin("esp32cfg", false);
+    prefs.putBool("firstSetup", false);
+    prefs.end();
+  }
+
+  server.on("/config", []() {
+    server.send(200, "text/html",
+      "<h3>Entering Config Mode...</h3>"
+      "<p>Reconnect to <b>ESP32_Config</b> WiFi.</p>");
+    delay(500);
+    startConfigMode();
+  });
+  server.begin();
+}
+
+void checkWiFiReconnect() {
+  if (configMode) return;
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWiFiCheck > 5000) {
+    lastWiFiCheck = millis();
+    Serial.println("🔄 WiFi lost — retrying...");
+    WiFi.reconnect();
+  }
+}
+
+// ============================================================
+//  LOAD CONFIG
+// ============================================================
+void loadConfig() {
+  prefs.begin("esp32cfg", true);
+
+  String hostname  = prefs.getString("hostname",  "");
+  String esp32Name = prefs.getString("esp32Name", "");
+  String ssid      = prefs.getString("ssid",      "");
+  String pass      = prefs.getString("pass",      "");
+  String printer   = prefs.getString("printer",   "");
+  config.firstSetup = prefs.getBool("firstSetup", false);
+
+  prefs.end();
+
+  hostname .toCharArray(config.hostname,  sizeof(config.hostname));
+  esp32Name.toCharArray(config.esp32Name, sizeof(config.esp32Name));
+  ssid     .toCharArray(config.ssid,      sizeof(config.ssid));
+  pass     .toCharArray(config.password,  sizeof(config.password));
+  printer  .toCharArray(config.printerIP, sizeof(config.printerIP));
+  setupDomain();
+}
+
+// ============================================================
+//  SNMP
+// ============================================================
+void setupSNMP() {
+  snmp.setUDP(&udp);
+  snmp.begin();
+  IPAddress printerIP;
+  printerIP.fromString(config.printerIP);
+  for (int i = 0; i < OID_COUNT; i++) {
+    if (oidList[i].isString)
+      callbacks[i] = snmp.addStringHandler(printerIP, oidList[i].oid,
+                                           (char**)&oidList[i].valuePtr);
+    else
+      callbacks[i] = snmp.addIntegerHandler(printerIP, oidList[i].oid,
+                                            (int*)oidList[i].valuePtr);
+  }
+}
+
+void runSNMP() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  IPAddress printerIP;
+  printerIP.fromString(config.printerIP);
+
+  Serial.println("\n📡 SNMP main query…");
+  SNMPGet request("public", 1);
+  for (int i = 0; i < OID_COUNT; i++) request.addOIDPointer(callbacks[i]);
+  request.setUDP(&udp);
+  request.setRequestID(random(1000, 9999));
+  request.sendTo(printerIP);
+
+  if (waitForSNMPResponse(5000)) Serial.println("✅ SNMP OK");
+  else                            Serial.println("⚠️ SNMP timeout");
+
+  printResults();
+  runVersionQuery();       // separate — sysDescr.0
+  runPrinterIPQuery();     // separate — printer IP OID
+}
+
+void runVersionQuery() {
+  IPAddress printerIP;
+  printerIP.fromString(config.printerIP);
+  sysDescr[0] = 0;
+  char* p = sysDescr;
+
+  SNMPGet vReq("public", 1);
+  ValueCallback* cb = snmp.addStringHandler(printerIP, ".1.3.6.1.2.1.1.1.0", &p);
+  vReq.addOIDPointer(cb);
+  vReq.setUDP(&udp);
+  vReq.setRequestID(random(1000, 9999));
+  vReq.sendTo(printerIP);
+
+  unsigned long start = millis();
+  while (millis() - start < 3000) { snmp.loop(); delay(20); }
+  extractVersionRaw();
+  printVersion();
+}
+
+// Query the printer's self-reported IP from the Xerox OID
+void runPrinterIPQuery() {
+  IPAddress printerIP;
+  printerIP.fromString(config.printerIP);
+
+  printerIPSensed[0] = 0;
+  char* p = printerIPSensed;
+
+  SNMPGet ipReq("public", 1);
+  ValueCallback* cb = snmp.addStringHandler(printerIP, PRINTER_IP_OID, &p);
+  ipReq.addOIDPointer(cb);
+  ipReq.setUDP(&udp);
+  ipReq.setRequestID(random(1000, 9999));
+  ipReq.sendTo(printerIP);
+
+  unsigned long start = millis();
+  while (millis() - start < 3000) { snmp.loop(); delay(20); }
+
+  if (strlen(printerIPSensed) == 0) {
+    // fall back to configured IP if OID didn't answer
+    strncpy(printerIPSensed, config.printerIP, sizeof(printerIPSensed) - 1);
+    printerIPSensed[sizeof(printerIPSensed) - 1] = 0;
+    Serial.println("(printer IP OID empty, using configured IP)");
+  }
+  Serial.printf("Printer IP (from OID): %s\n", printerIPSensed);
+}
+
+void extractVersionRaw() {
+  softwareVersion[0] = 0;
+  String d = String(sysDescr);
+  int k = d.indexOf("SS ");
+  if (k < 0) { d.toCharArray(softwareVersion, sizeof(softwareVersion)); return; }
+  String v = d.substring(k); v.trim();
+  v.toCharArray(softwareVersion, sizeof(softwareVersion));
+}
+
+bool waitForSNMPResponse(unsigned long timeoutMs) {
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    snmp.loop(); delay(50);
+    if (isSNMPDataValid()) return true;
+  }
+  return false;
+}
+
+bool isSNMPDataValid() {
+  if (strlen(deviceDescr) == 0) return false;
+  if (strlen(systemName)  == 0) return false;
+  if (strlen(serialNum)   == 0) return false;
+  if (blackTotal == 0 && colorTotal == 0 && totalAll == 0) return false;
+  return true;
+}
+
+// ============================================================
+//  PRINT
+// ============================================================
+void printResults() {
+  Serial.println("\n======= SNMP Results =======");
+  Serial.printf("Device : %s\n", deviceDescr);
+  Serial.printf("System : %s\n", systemName);
+  Serial.printf("Serial : %s\n", serialNum);
+  Serial.printf("PowerOn: %d\n", powerOnImpr);
+  Serial.printf("Copy   : B=%d C=%d | Print: B=%d C=%d\n",
+                blackCopy, colorCopy, blackPrint, colorPrint);
+  Serial.printf("Scan   : Net=%d Email=%d\n", networkScan, emailScan);
+  Serial.printf("Totals : BT=%d CT=%d BLT=%d CLT=%d ALL=%d\n",
+                blackTotal, colorTotal, blackLargeTotal, colorLargeTotal, totalAll);
+  Serial.println(getChipID());
+  Serial.println("=============================\n");
+}
+
+void printVersion() {
+  if (strlen(softwareVersion) == 0) { Serial.println("(no version)"); return; }
+  Serial.println("--- Software Version (raw) ---");
+  Serial.println(softwareVersion);
+  Serial.println("------------------------------");
+}
+
+// ============================================================
+//  SAVE METER
+// ============================================================
+void saveMeter() {
+  String printerId = getWithRetry(getEspIdUrl + "?serial=" + getChipID());
+  if (printerId.length() == 0) {
+    Serial.println("❌ printerId fetch failed — queuing");
+    prefs.begin("esp32cfg", false);
+    prefs.putString("pendingCommand", "run");
+    prefs.end();
+    return;
+  }
+  printerId.trim();
+
+  // Use the sensed IP if available, else fall back to configured one
+  String printerIPUsed = strlen(printerIPSensed) > 0
+                       ? String(printerIPSensed)
+                       : String(config.printerIP);
+
+  String postData =
+      "printerId="            + printerId +
+      "&printerModel="        + urlEncode(String(deviceDescr)) +
+      "&printerSystemName="   + urlEncode(String(systemName)) +
+      "&printerSerialNumber=" + urlEncode(String(serialNum)) +
+      "&printerIP="           + urlEncode(printerIPUsed) +
+      "&softwareVersion="     + urlEncode(String(softwareVersion)) +
+      "&powerOnImpr="         + String(powerOnImpr) +
+      "&blackCopy="           + String(blackCopy) +
+      "&colorCopy="           + String(colorCopy) +
+      "&blackPrint="          + String(blackPrint) +
+      "&colorPrint="          + String(colorPrint) +
+      "&networkScan="         + String(networkScan) +
+      "&emailScan="           + String(emailScan) +
+      "&totalBlack="          + String(blackTotal) +
+      "&totalColor="          + String(colorTotal) +
+      "&totalBlackLarge="     + String(blackLargeTotal) +
+      "&totalColorLarge="     + String(colorLargeTotal) +
+      "&total="               + String(totalAll);
+
+  if (postWithRetry(addMeterUrl, postData).length() == 0) {
+    Serial.println("❌ POST failed — queuing");
+    prefs.begin("esp32cfg", false);
+    prefs.putString("pendingCommand", "run");
+    prefs.end();
+  }
+}
+
+void retryPendingCommand() {
+  prefs.begin("esp32cfg", true);
+  String cmd = prefs.getString("pendingCommand", "");
+  prefs.end();
+  if (cmd == "run") {
+    Serial.println("🔄 Retrying pending run…");
+    saveMeter();
+    prefs.begin("esp32cfg", false);
+    prefs.remove("pendingCommand");
+    prefs.end();
+  }
+}
+
+// ============================================================
+//  CLOUD COMMAND
+// ============================================================
+void checkCloudCommand() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  String cmd = getWithRetry(getCommandUrl + "?serial=" + getChipID());
+  if (cmd != "" && cmd.indexOf("run") >= 0) {
+    Serial.println("🚀 Cloud RUN");
+    runSNMP(); saveMeter(); clearCloudCommand();
+  }
+}
+
+void clearCloudCommand() {
+  getWithRetry(setCommandUrl + "?serial=" + getChipID() + "&cmd=none");
+}
+
+String pingServer() {
+  String response = getWithRetry(pingUrl + "?serial=" + getChipID());
+  if (response.length() == 0) return "";
+  Serial.print("📡 Ping: "); Serial.println(response);
+  if (response.indexOf("\"command\":\"run\"") > 0) {
+    Serial.println("🚀 RUN from heartbeat");
+    runSNMP(); saveMeter(); clearCloudCommand();
+  }
+  return response;
+}
+
+// ============================================================
+//  SCHEDULE
+// ============================================================
+bool isScheduleTime() {
+  time_t now = time(nullptr);
+  struct tm* t = localtime(&now);
+  for (int i = 0; i < (int)(sizeof(scheduleHours) / sizeof(int)); i++) {
+    if (t->tm_hour == scheduleHours[i] && t->tm_min == scheduleMinutes[i]) {
+      Serial.printf("⏰ Scheduled %02d:%02d\n", t->tm_hour, t->tm_min);
+      for (int k = 0; k < 60; k++) { yield(); delay(1000); }
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+//  CHIP ID
+// ============================================================
+String getChipID() {
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  char buf[13];
+  sprintf(buf, "%02X%02X%02X%02X%02X%02X",
+          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return String(buf);
+}
